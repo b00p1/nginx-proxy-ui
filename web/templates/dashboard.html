@@ -83,7 +83,8 @@
         <div class="p-6 border-b border-gray-700">
             <h3 id="modal-title" class="text-lg font-semibold">Add Proxy</h3>
         </div>
-        <form id="proxy-form" class="p-6 space-y-5">
+        <form id="proxy-form" novalidate class="p-6 space-y-5">
+            <div id="modal-error" class="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm hidden"></div>
             <input type="hidden" id="proxy-id">
             <div class="grid grid-cols-2 gap-4">
                 <div>
@@ -222,7 +223,9 @@ function openAddModal() {
     document.getElementById('backends-list').innerHTML = '';
     document.getElementById('proxy-protocol').value = 'tcp';
     document.getElementById('hash-consistent-container').classList.add('hidden');
+    document.getElementById('modal-error').classList.add('hidden');
     document.getElementById('modal-title').textContent = 'Add Proxy';
+    addBackend();
     showModal();
 }
 
@@ -230,6 +233,7 @@ function editProxy(proxy) {
     editingId = proxy.id;
     document.getElementById('modal-title').textContent = 'Edit Proxy';
     document.getElementById('proxy-id').value = proxy.id;
+    document.getElementById('modal-error').classList.add('hidden');
     document.getElementById('proxy-name').value = proxy.name || '';
     document.getElementById('proxy-listen').value = proxy.listen || '';
     document.getElementById('proxy-protocol').value = proxy.protocol || 'tcp';
@@ -259,16 +263,32 @@ function closeModal() {
     document.getElementById('proxy-modal').classList.remove('flex');
 }
 
+function showError(msg) {
+    const el = document.getElementById('modal-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+}
+
 document.getElementById('proxy-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    document.getElementById('modal-error').classList.add('hidden');
+
+    const name = document.getElementById('proxy-name').value.trim();
+    const listen = document.getElementById('proxy-listen').value.trim();
+    if (!name) { showError('Name is required'); return; }
+    if (!listen) { showError('Listen address is required'); return; }
+
+    const backends = collectBackends();
+    if (backends.length === 0) { showError('At least one backend is required'); return; }
+
     const id = document.getElementById('proxy-id').value;
     const extraRaw = document.getElementById('proxy-extra').value.trim();
     const payload = {
         id: id || crypto.randomUUID(),
-        name: document.getElementById('proxy-name').value.trim(),
-        listen: document.getElementById('proxy-listen').value.trim(),
+        name: name,
+        listen: listen,
         protocol: document.getElementById('proxy-protocol').value,
-        backends: collectBackends(),
+        backends: backends,
         proxy_protocol: document.getElementById('proxy-protocol-on').checked,
         proxy_timeout: document.getElementById('proxy-timeout').value.trim(),
         connect_timeout: document.getElementById('proxy-connect-timeout').value.trim(),
@@ -289,13 +309,13 @@ document.getElementById('proxy-form').addEventListener('submit', async (e) => {
         });
         if (!res.ok) {
             const err = await res.json();
-            alert('Error: ' + (err.error || 'unknown'));
+            showError(err.error || 'Unknown error');
             return;
         }
         closeModal();
         location.reload();
     } catch (err) {
-        alert('Network error: ' + err.message);
+        showError('Network error: ' + err.message);
     }
 });
 
