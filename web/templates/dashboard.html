@@ -284,7 +284,6 @@ document.getElementById('proxy-form').addEventListener('submit', async (e) => {
     const id = document.getElementById('proxy-id').value;
     const extraRaw = document.getElementById('proxy-extra').value.trim();
     const payload = {
-        id: id || crypto.randomUUID(),
         name: name,
         listen: listen,
         protocol: document.getElementById('proxy-protocol').value,
@@ -298,6 +297,7 @@ document.getElementById('proxy-form').addEventListener('submit', async (e) => {
         hash_consistent: document.getElementById('proxy-hash-consistent').checked,
         extra: extraRaw ? extraRaw.split('\n').map(s=>s.trim()).filter(Boolean) : [],
     };
+    if (id) payload.id = id;
 
     try {
         const url = id ? `/api/proxies/${id}` : '/api/proxies';
