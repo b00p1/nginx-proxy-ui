@@ -32,13 +32,13 @@ func (m *Manager) Load() ([]model.Proxy, error) {
 		return nil, fmt.Errorf("read stream config: %w", err)
 	}
 
-	inner := extractBlockContent(string(data))
-	if inner == "" {
+	content := strings.TrimSpace(string(data))
+	if content == "" {
 		m.entries = nil
 		return nil, nil
 	}
 
-	result, err := ParseStreamBlock(inner)
+	result, err := ParseStreamBlock(content)
 	if err != nil {
 		return nil, fmt.Errorf("parse stream block: %w", err)
 	}
@@ -51,9 +51,7 @@ func (m *Manager) Save(proxies []model.Proxy) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	newInner := BuildStreamContent(m.entries, proxies)
-	indented := indentBlock(newInner)
-	newContent := "stream {\n" + indented + "\n}\n"
+	newContent := BuildStreamContent(m.entries, proxies) + "\n"
 
 	dir := m.streamPath
 	if idx := strings.LastIndexByte(dir, '/'); idx >= 0 {
@@ -64,29 +62,4 @@ func (m *Manager) Save(proxies []model.Proxy) error {
 	}
 
 	return os.WriteFile(m.streamPath, []byte(newContent), 0644)
-}
-
-func indentBlock(s string) string {
-	if s == "" {
-		return ""
-	}
-	lines := strings.Split(s, "\n")
-	for i, line := range lines {
-		if strings.TrimSpace(line) != "" {
-			lines[i] = "    " + line
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func extractBlockContent(block string) string {
-	braceIdx := strings.IndexByte(block, '{')
-	if braceIdx < 0 {
-		return ""
-	}
-	endIdx := strings.LastIndexByte(block, '}')
-	if endIdx < 0 {
-		return ""
-	}
-	return strings.TrimSpace(block[braceIdx+1 : endIdx])
 }
