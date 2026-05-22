@@ -1,0 +1,364 @@
+{{define "content"}}
+<nav class="bg-gray-800 border-b border-gray-700 px-6 py-3">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="text-emerald-400 font-bold text-lg">NGINX Proxy Manager</span>
+            <span class="text-gray-500 text-xs bg-gray-700 px-2 py-0.5 rounded">TCP / UDP</span>
+        </div>
+        <form method="post" action="/logout">
+            <button type="submit" class="text-gray-400 hover:text-red-400 text-sm transition">Logout</button>
+        </form>
+    </div>
+</nav>
+
+<main class="max-w-7xl mx-auto px-6 py-6">
+    <div id="status-bar" class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <span id="status-dot" class="w-3 h-3 rounded-full bg-gray-500 inline-block"></span>
+                <span id="status-text" class="text-sm text-gray-400">Checking...</span>
+            </div>
+            <span id="reload-time" class="text-xs text-gray-500"></span>
+        </div>
+        <button id="reload-btn" onclick="reloadNginx()"
+            class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition disabled:opacity-50">
+            Reload Nginx
+        </button>
+    </div>
+
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Stream Proxies</h2>
+        <button onclick="openAddModal()"
+            class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+            + Add Proxy
+        </button>
+    </div>
+
+    <div class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-gray-700/50 text-gray-400 uppercase text-xs tracking-wider">
+                    <th class="px-4 py-3 text-left">Name</th>
+                    <th class="px-4 py-3 text-left">Listen</th>
+                    <th class="px-4 py-3 text-left">Protocol</th>
+                    <th class="px-4 py-3 text-left">Backends</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="proxy-table-body" class="divide-y divide-gray-700">
+                {{range .Proxies}}
+                <tr class="hover:bg-gray-700/30 transition" data-id="{{.ID}}">
+                    <td class="px-4 py-3 font-medium">{{.Name}}</td>
+                    <td class="px-4 py-3 text-gray-300 font-mono">{{.Listen}}</td>
+                    <td class="px-4 py-3">
+                        <span class="text-xs font-medium px-2 py-0.5 rounded {{if eq .Protocol "udp"}}bg-purple-900/50 text-purple-300{{else}}bg-blue-900/50 text-blue-300{{end}}">
+                            {{.Protocol | upper}}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-gray-300 text-xs font-mono">
+                        {{- range $i, $b := .Backends -}}
+                            {{- if $i}}, {{end -}}
+                            {{- $b.Address -}}
+                        {{- else -}}
+                            <span class="text-gray-500 italic">no backends</span>
+                        {{- end -}}
+                    </td>
+                    <td class="px-4 py-3 text-right">
+                        <button onclick='editProxy({{. | json}})' class="text-blue-400 hover:text-blue-300 text-xs mr-2 transition">Edit</button>
+                        <button onclick="deleteProxy('{{.ID}}')" class="text-red-400 hover:text-red-300 text-xs transition">Delete</button>
+                    </td>
+                </tr>
+                {{else}}
+                <tr>
+                    <td colspan="5" class="px-4 py-8 text-center text-gray-500 italic">No proxies configured</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</main>
+
+<div id="proxy-modal" class="fixed inset-0 bg-black/70 hidden items-center justify-center z-50">
+    <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4">
+        <div class="p-6 border-b border-gray-700">
+            <h3 id="modal-title" class="text-lg font-semibold">Add Proxy</h3>
+        </div>
+        <form id="proxy-form" class="p-6 space-y-5">
+            <input type="hidden" id="proxy-id">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Name</label>
+                    <input type="text" id="proxy-name" required
+                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Listen</label>
+                    <input type="text" id="proxy-listen" placeholder="0.0.0.0:3306" required
+                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:border-emerald-500">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Protocol</label>
+                <select id="proxy-protocol"
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:border-emerald-500">
+                    <option value="tcp">TCP</option>
+                    <option value="udp">UDP</option>
+                </select>
+            </div>
+            <div>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-sm font-medium text-gray-300">Backends</label>
+                    <button type="button" onclick="addBackend()"
+                        class="text-emerald-400 hover:text-emerald-300 text-xs transition">+ Add Backend</button>
+                </div>
+                <div id="backends-list" class="space-y-2"></div>
+            </div>
+            <details class="bg-gray-900/50 rounded-lg p-4">
+                <summary class="text-sm font-medium text-gray-300 cursor-pointer hover:text-emerald-400 transition">Advanced Options</summary>
+                <div class="mt-4 space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <label class="flex items-center gap-2 text-sm text-gray-300">
+                            <input type="checkbox" id="proxy-protocol-on" class="rounded bg-gray-700 border-gray-500 text-emerald-500 focus:ring-emerald-500">
+                            Proxy Protocol
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-gray-300">
+                            <input type="checkbox" id="proxy-tcp-nodelay" class="rounded bg-gray-700 border-gray-500 text-emerald-500 focus:ring-emerald-500">
+                            TCP Nodelay
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-gray-300">
+                            <input type="checkbox" id="proxy-tcp-keepalive" class="rounded bg-gray-700 border-gray-500 text-emerald-500 focus:ring-emerald-500">
+                            TCP Keepalive
+                        </label>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Proxy Timeout</label>
+                            <input type="text" id="proxy-timeout" placeholder="30s"
+                                class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-emerald-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Connect Timeout</label>
+                            <input type="text" id="proxy-connect-timeout" placeholder="10s"
+                                class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-emerald-500">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Balance Method</label>
+                        <select id="proxy-balance"
+                            class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-emerald-500">
+                            <option value="">Round Robin (default)</option>
+                            <option value="least_conn">Least Connections</option>
+                            <option value="random">Random</option>
+                            <option value="hash">Hash</option>
+                        </select>
+                    </div>
+                    <div id="hash-consistent-container" class="hidden">
+                        <label class="flex items-center gap-2 text-sm text-gray-300">
+                            <input type="checkbox" id="proxy-hash-consistent" class="rounded bg-gray-700 border-gray-500 text-emerald-500 focus:ring-emerald-500">
+                            Hash Consistent
+                        </label>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Extra Directives</label>
+                        <textarea id="proxy-extra" rows="3" placeholder="proxy_next_upstream on;"
+                            class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-emerald-500"></textarea>
+                    </div>
+                </div>
+            </details>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="closeModal()"
+                    class="px-4 py-2 text-sm text-gray-400 hover:text-white transition">Cancel</button>
+                <button type="submit"
+                    class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+let editingId = null;
+
+function addBackend(addr, weight, failTimeout, backup) {
+    const list = document.getElementById('backends-list');
+    const div = document.createElement('div');
+    div.className = 'flex items-start gap-2 p-2 bg-gray-900/50 rounded-lg';
+    div.innerHTML = `
+        <div class="flex-1 grid grid-cols-12 gap-1 text-xs items-center">
+            <input type="text" placeholder="host:port" value="${addr||''}"
+                class="col-span-4 px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-gray-100 focus:outline-none focus:border-emerald-500 backend-addr">
+            <input type="number" placeholder="weight" value="${weight||''}"
+                class="col-span-2 px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-gray-100 focus:outline-none focus:border-emerald-500 backend-weight">
+            <input type="text" placeholder="timeout" value="${failTimeout||''}"
+                class="col-span-3 px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-gray-100 focus:outline-none focus:border-emerald-500 backend-fail-timeout">
+            <label class="col-span-2 flex items-center gap-1 text-gray-300">
+                <input type="checkbox" ${backup?'checked':''} class="rounded bg-gray-700 border-gray-500 text-emerald-500 backend-backup"> Backup
+            </label>
+            <button type="button" onclick="this.closest('.flex').remove()"
+                class="col-span-1 text-red-400 hover:text-red-300">x</button>
+        </div>
+    `;
+    list.appendChild(div);
+}
+
+function collectBackends() {
+    const backends = [];
+    document.querySelectorAll('#backends-list > div').forEach(div => {
+        const addr = div.querySelector('.backend-addr')?.value?.trim();
+        if (!addr) return;
+        backends.push({
+            address: addr,
+            weight: parseInt(div.querySelector('.backend-weight')?.value) || 0,
+            fail_timeout: div.querySelector('.backend-fail-timeout')?.value || '',
+            backup: div.querySelector('.backend-backup')?.checked || false,
+        });
+    });
+    return backends;
+}
+
+function openAddModal() {
+    editingId = null;
+    document.getElementById('proxy-form').reset();
+    document.getElementById('proxy-id').value = '';
+    document.getElementById('backends-list').innerHTML = '';
+    document.getElementById('proxy-protocol').value = 'tcp';
+    document.getElementById('hash-consistent-container').classList.add('hidden');
+    document.getElementById('modal-title').textContent = 'Add Proxy';
+    showModal();
+}
+
+function editProxy(proxy) {
+    editingId = proxy.id;
+    document.getElementById('modal-title').textContent = 'Edit Proxy';
+    document.getElementById('proxy-id').value = proxy.id;
+    document.getElementById('proxy-name').value = proxy.name || '';
+    document.getElementById('proxy-listen').value = proxy.listen || '';
+    document.getElementById('proxy-protocol').value = proxy.protocol || 'tcp';
+    document.getElementById('proxy-protocol-on').checked = proxy.proxy_protocol || false;
+    document.getElementById('proxy-tcp-nodelay').checked = proxy.tcp_nodelay || false;
+    document.getElementById('proxy-tcp-keepalive').checked = proxy.tcp_keepalive || false;
+    document.getElementById('proxy-timeout').value = proxy.proxy_timeout || '';
+    document.getElementById('proxy-connect-timeout').value = proxy.connect_timeout || '';
+    document.getElementById('proxy-balance').value = proxy.balance_method || '';
+    document.getElementById('proxy-hash-consistent').checked = proxy.hash_consistent || false;
+    document.getElementById('proxy-extra').value = (proxy.extra || []).join('\n');
+    document.getElementById('hash-consistent-container').classList.toggle('hidden', proxy.balance_method !== 'hash');
+
+    const list = document.getElementById('backends-list');
+    list.innerHTML = '';
+    (proxy.backends || []).forEach(b => addBackend(b.address, b.weight, b.fail_timeout, b.backup));
+    showModal();
+}
+
+function showModal() {
+    document.getElementById('proxy-modal').classList.remove('hidden');
+    document.getElementById('proxy-modal').classList.add('flex');
+}
+
+function closeModal() {
+    document.getElementById('proxy-modal').classList.add('hidden');
+    document.getElementById('proxy-modal').classList.remove('flex');
+}
+
+document.getElementById('proxy-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('proxy-id').value;
+    const extraRaw = document.getElementById('proxy-extra').value.trim();
+    const payload = {
+        id: id || crypto.randomUUID(),
+        name: document.getElementById('proxy-name').value.trim(),
+        listen: document.getElementById('proxy-listen').value.trim(),
+        protocol: document.getElementById('proxy-protocol').value,
+        backends: collectBackends(),
+        proxy_protocol: document.getElementById('proxy-protocol-on').checked,
+        proxy_timeout: document.getElementById('proxy-timeout').value.trim(),
+        connect_timeout: document.getElementById('proxy-connect-timeout').value.trim(),
+        tcp_nodelay: document.getElementById('proxy-tcp-nodelay').checked,
+        tcp_keepalive: document.getElementById('proxy-tcp-keepalive').checked,
+        balance_method: document.getElementById('proxy-balance').value,
+        hash_consistent: document.getElementById('proxy-hash-consistent').checked,
+        extra: extraRaw ? extraRaw.split('\n').map(s=>s.trim()).filter(Boolean) : [],
+    };
+
+    try {
+        const url = id ? `/api/proxies/${id}` : '/api/proxies';
+        const method = id ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+            method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            alert('Error: ' + (err.error || 'unknown'));
+            return;
+        }
+        closeModal();
+        location.reload();
+    } catch (err) {
+        alert('Network error: ' + err.message);
+    }
+});
+
+async function deleteProxy(id) {
+    if (!confirm('Delete this proxy?')) return;
+    try {
+        const res = await fetch(`/api/proxies/${id}`, {method: 'DELETE'});
+        if (!res.ok) {
+            const err = await res.json();
+            alert('Error: ' + (err.error || 'unknown'));
+            return;
+        }
+        location.reload();
+    } catch (err) {
+        alert('Network error: ' + err.message);
+    }
+}
+
+async function reloadNginx() {
+    const btn = document.getElementById('reload-btn');
+    btn.disabled = true;
+    btn.textContent = 'Reloading...';
+    try {
+        const res = await fetch('/api/config/reload', {method: 'POST'});
+        const data = await res.json();
+        if (!res.ok) {
+            setStatus(false, 'Reload failed: ' + (data.error || ''));
+        } else {
+            setStatus(true, 'Reloaded successfully');
+        }
+    } catch (err) {
+        setStatus(false, 'Error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Reload Nginx';
+    }
+    updateStatus();
+}
+
+async function updateStatus() {
+    try {
+        const res = await fetch('/api/config/status');
+        const data = await res.json();
+        setStatus(data.valid, data.valid ? 'Config valid' : 'Config invalid');
+        if (data.last_reload) {
+            document.getElementById('reload-time').textContent = 'Last reload: ' + new Date(data.last_reload).toLocaleString();
+        }
+    } catch (err) {
+        setStatus(false, 'Cannot check status');
+    }
+}
+
+function setStatus(ok, text) {
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    dot.className = `w-3 h-3 rounded-full inline-block ${ok ? 'bg-emerald-500' : 'bg-red-500'}`;
+    txt.textContent = text;
+}
+
+document.getElementById('proxy-balance').addEventListener('change', function() {
+    document.getElementById('hash-consistent-container').classList.toggle('hidden', this.value !== 'hash');
+});
+
+updateStatus();
+</script>
+{{end}}

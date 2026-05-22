@@ -1,0 +1,20 @@
+[Unit]
+Description=NGINX Proxy Manager
+After=network.target nginx.service
+Wants=nginx.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/nginx-proxy-manager
+ExecStart=/opt/nginx-proxy-manager/nginx-proxy-manager
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment=LISTEN_ADDR=:8742
+Environment=NGINX_CONF=/etc/nginx/nginx.conf
+Environment=DB_PATH=/etc/nginx-proxy-manager/auth.db
+
+[Install]
+WantedBy=multi-user.target

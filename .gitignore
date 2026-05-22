@@ -1,0 +1,6 @@
+nginx-proxy-manager
+*.db
+*.test
+.env
+.idea/
+.vscode/
