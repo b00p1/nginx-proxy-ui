@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -17,10 +18,25 @@ type Store struct {
 }
 
 func New(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	dir := path
+	if idx := strings.LastIndexByte(path, '/'); idx >= 0 {
+		dir = path[:idx]
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("create db dir: %w", err)
+	}
+
+	// Remove stale WAL/SHM files from other SQLite implementations
+	for _, ext := range []string{"-wal", "-shm"} {
+		os.Remove(path + ext)
+	}
+
+	dsn := path + "?_pragma=journal_mode(DELETE)&_pragma=busy_timeout(5000)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+	db.SetMaxOpenConns(1)
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
