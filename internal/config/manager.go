@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -108,11 +109,14 @@ func extractBlockContent(block string) string {
 	return strings.TrimSpace(block[braceIdx+1 : endIdx])
 }
 
+var streamKeyword = regexp.MustCompile(`(?m)^\s*stream\b`)
+
 func findStreamBlock(content string) (before, block, after string) {
-	idx := strings.Index(content, "stream")
-	if idx < 0 {
+	loc := streamKeyword.FindStringIndex(content)
+	if loc == nil {
 		return content, "", ""
 	}
+	idx := loc[0]
 
 	braceOffset := strings.IndexByte(content[idx:], '{')
 	if braceOffset < 0 {
