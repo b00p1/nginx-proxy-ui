@@ -18,9 +18,9 @@ import (
 var templatesRoot embed.FS
 
 func main() {
-	confPath := os.Getenv("NGINX_CONF")
-	if confPath == "" {
-		confPath = "/etc/nginx/nginx.conf"
+	streamPath := os.Getenv("STREAM_CONF")
+	if streamPath == "" {
+		streamPath = "/etc/nginx/stream-manager/stream.conf"
 	}
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
@@ -46,7 +46,7 @@ func main() {
 		log.Fatalf("templates: %v", err)
 	}
 
-	mgr := config.NewManager(confPath)
+	mgr := config.NewManager(streamPath)
 	ctl := nginx.New()
 
 	authHandler := auth.NewHandler(store, rend)
@@ -74,7 +74,7 @@ func main() {
 	mux.Handle("POST /api/config/reload", authMiddleware.RequireAuth(http.HandlerFunc(apiHandler.ReloadConfig)))
 
 	log.Printf("Starting NGINX Proxy Manager on %s", addr)
-	log.Printf("Config file: %s", confPath)
+	log.Printf("Stream config: %s", streamPath)
 	log.Printf("Database: %s", dbPath)
 
 	if err := http.ListenAndServe(addr, mux); err != nil {

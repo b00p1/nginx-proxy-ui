@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -11,39 +10,34 @@ import (
 )
 
 type Manager struct {
-	mu       sync.Mutex
-	confPath string
-	entries  []StreamEntry
+	mu         sync.Mutex
+	streamPath string
+	entries    []StreamEntry
 }
 
-func NewManager(confPath string) *Manager {
-	return &Manager{confPath: confPath}
+func NewManager(streamPath string) *Manager {
+	return &Manager{streamPath: streamPath}
 }
 
 func (m *Manager) Load() ([]model.Proxy, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	data, err := os.ReadFile(m.confPath)
+	data, err := os.ReadFile(m.streamPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			m.entries = nil
 			return nil, nil
 		}
-		return nil, fmt.Errorf("read nginx.conf: %w", err)
+		return nil, fmt.Errorf("read stream config: %w", err)
 	}
 
-	content := string(data)
-	before, block, after := findStreamBlock(content)
-	_ = before
-	_ = after
-
-	if block == "" {
+	inner := extractBlockContent(string(data))
+	if inner == "" {
 		m.entries = nil
 		return nil, nil
 	}
 
-	inner := extractBlockContent(block)
 	result, err := ParseStreamBlock(inner)
 	if err != nil {
 		return nil, fmt.Errorf("parse stream block: %w", err)
@@ -57,31 +51,19 @@ func (m *Manager) Save(proxies []model.Proxy) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	data, err := os.ReadFile(m.confPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Create new file with stream block
-			newContent := buildFullConfig(proxies)
-			return os.WriteFile(m.confPath, []byte(newContent), 0644)
-		}
-		return fmt.Errorf("read nginx.conf: %w", err)
-	}
-
-	content := string(data)
-	before, block, after := findStreamBlock(content)
-
 	newInner := BuildStreamContent(m.entries, proxies)
 	indented := indentBlock(newInner)
-	newBlock := "stream {\n" + indented + "\n}"
+	newContent := "stream {\n" + indented + "\n}\n"
 
-	var newContent string
-	if block == "" {
-		newContent = strings.TrimRight(content, "\n ") + "\n\n" + newBlock + "\n"
-	} else {
-		newContent = before + newBlock + after
+	dir := m.streamPath
+	if idx := strings.LastIndexByte(dir, '/'); idx >= 0 {
+		dir = dir[:idx]
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	return os.WriteFile(m.confPath, []byte(newContent), 0644)
+	return os.WriteFile(m.streamPath, []byte(newContent), 0644)
 }
 
 func indentBlock(s string) string {
@@ -107,61 +89,4 @@ func extractBlockContent(block string) string {
 		return ""
 	}
 	return strings.TrimSpace(block[braceIdx+1 : endIdx])
-}
-
-var streamKeyword = regexp.MustCompile(`(?m)^\s*stream\b`)
-
-func findStreamBlock(content string) (before, block, after string) {
-	loc := streamKeyword.FindStringIndex(content)
-	if loc == nil {
-		return content, "", ""
-	}
-	idx := loc[0]
-
-	braceOffset := strings.IndexByte(content[idx:], '{')
-	if braceOffset < 0 {
-		return content[:idx], "", content[idx:]
-	}
-	braceStart := idx + braceOffset
-
-	depth := 1
-	i := braceStart + 1
-	for i < len(content) && depth > 0 {
-		switch content[i] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-		}
-		i++
-	}
-	if depth != 0 {
-		return content, "", ""
-	}
-
-	blockEnd := i - 1
-	before = content[:idx]
-	block = content[idx : blockEnd+1]
-	after = content[blockEnd+1:]
-	return before, block, after
-}
-
-func buildFullConfig(proxies []model.Proxy) string {
-	var b strings.Builder
-	b.WriteString("worker_processes auto;\n")
-	b.WriteString("events {\n    worker_connections 1024;\n}\n\n")
-	b.WriteString("stream {\n")
-	for _, p := range proxies {
-		name := sanitizeUpstreamName(p.Name)
-		if len(p.Backends) > 0 {
-			b.WriteString("    ")
-			b.WriteString(buildUpstreamBlock(p, name))
-			b.WriteString("\n\n")
-		}
-		b.WriteString("    ")
-		b.WriteString(buildServerBlock(p, name))
-		b.WriteString("\n")
-	}
-	b.WriteString("}")
-	return b.String()
 }
