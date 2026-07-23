@@ -64,6 +64,9 @@ func main() {
 	mux.Handle("POST /logout", authMiddleware.RequireAuth(http.HandlerFunc(authHandler.Logout)))
 	mux.Handle("GET /change-password", authMiddleware.RequireAuth(http.HandlerFunc(authHandler.ChangePasswordPage)))
 	mux.Handle("POST /change-password", authMiddleware.RequireAuth(http.HandlerFunc(authHandler.ChangePassword)))
+	mux.Handle("GET /users", authMiddleware.RequireAuth(http.HandlerFunc(authHandler.UsersPage)))
+	mux.Handle("POST /users", authMiddleware.RequireAuth(http.HandlerFunc(authHandler.CreateUser)))
+	mux.Handle("POST /users/{id}/delete", authMiddleware.RequireAuth(http.HandlerFunc(authHandler.DeleteUser)))
 
 	// API routes
 	mux.Handle("GET /api/proxies", authMiddleware.RequireAuth(http.HandlerFunc(apiHandler.ListProxies)))

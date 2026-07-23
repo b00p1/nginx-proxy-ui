@@ -12,6 +12,7 @@ type Render struct {
 	loginTmpl  *template.Template
 	cpTmpl     *template.Template
 	dashTmpl   *template.Template
+	usersTmpl  *template.Template
 }
 
 func NewRender(fsys fs.FS) (*Render, error) {
@@ -42,6 +43,10 @@ func NewRender(fsys fs.FS) (*Render, error) {
 	if err != nil {
 		return nil, err
 	}
+	users, err := fs.ReadFile(fsys, "users.html")
+	if err != nil {
+		return nil, err
+	}
 
 	loginTmpl, err := template.New("login").Funcs(funcMap).Parse(string(layout) + string(login))
 	if err != nil {
@@ -55,11 +60,16 @@ func NewRender(fsys fs.FS) (*Render, error) {
 	if err != nil {
 		return nil, err
 	}
+	usersTmpl, err := template.New("users").Funcs(funcMap).Parse(string(layout) + string(users))
+	if err != nil {
+		return nil, err
+	}
 
 	return &Render{
 		loginTmpl: loginTmpl,
 		cpTmpl:    cpTmpl,
 		dashTmpl:  dashTmpl,
+		usersTmpl: usersTmpl,
 	}, nil
 }
 
@@ -71,9 +81,16 @@ func (r *Render) Template(name string) *template.Template {
 		return r.cpTmpl
 	case "dashboard":
 		return r.dashTmpl
+	case "users":
+		return r.usersTmpl
 	default:
 		return r.dashTmpl
 	}
+}
+
+func (r *Render) Users(w http.ResponseWriter, data interface{}) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	r.usersTmpl.Execute(w, data)
 }
 
 func (r *Render) Login(w http.ResponseWriter, data interface{}) {

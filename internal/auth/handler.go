@@ -2,11 +2,18 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
 	"nginx-proxy-manager/internal/handler"
 )
+
+type User struct {
+	ID        int64
+	Username  string
+	CreatedAt string
+}
 
 type Store interface {
 	Authenticate(username, password string) (int64, error)
@@ -15,6 +22,9 @@ type Store interface {
 	CreateSession(userID int64) (string, error)
 	ValidateSession(sessionID string) (int64, error)
 	DeleteSession(sessionID string) error
+	CreateUser(username, password string) error
+	DeleteUser(userID int64) error
+	ListUsers() ([]User, error)
 }
 
 type contextKey string
@@ -121,4 +131,84 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (h *Handler) UsersPage(w http.ResponseWriter, r *http.Request) {
+	users, err := h.store.ListUsers()
+	if err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	h.render.Users(w, map[string]interface{}{
+		"Users": users,
+	})
+}
+
+func (h *Handler) renderUsersWithError(w http.ResponseWriter, msg string) {
+	users, err := h.store.ListUsers()
+	if err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	h.render.Users(w, map[string]interface{}{
+		"Users": users,
+		"Error": msg,
+	})
+}
+
+func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderUsersWithError(w, "Bad request")
+		return
+	}
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	if username == "" {
+		h.renderUsersWithError(w, "Username is required")
+		return
+	}
+	if len(password) < 6 {
+		h.renderUsersWithError(w, "Password must be at least 6 characters")
+		return
+	}
+
+	if err := h.store.CreateUser(username, password); err != nil {
+		h.renderUsersWithError(w, err.Error())
+		return
+	}
+
+	http.Redirect(w, r, "/users", http.StatusSeeOther)
+}
+
+func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	currentUserID, ok := UserIDFromCtx(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	targetID := r.PathValue("id")
+	if targetID == "" {
+		http.Error(w, "Missing user ID", http.StatusBadRequest)
+		return
+	}
+
+	var id int64
+	if _, err := fmt.Sscanf(targetID, "%d", &id); err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	if id == currentUserID {
+		http.Error(w, "Cannot delete yourself", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.DeleteUser(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/users", http.StatusSeeOther)
 }

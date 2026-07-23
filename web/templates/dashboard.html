@@ -5,9 +5,12 @@
             <span class="text-emerald-400 font-bold text-lg">NGINX Proxy Manager</span>
             <span class="text-gray-500 text-xs bg-gray-700 px-2 py-0.5 rounded">TCP / UDP</span>
         </div>
-        <form method="post" action="/logout">
-            <button type="submit" class="text-gray-400 hover:text-red-400 text-sm transition">Logout</button>
-        </form>
+        <div class="flex items-center gap-4">
+            <a href="/users" class="text-gray-400 hover:text-emerald-400 text-sm transition">Users</a>
+            <form method="post" action="/logout">
+                <button type="submit" class="text-gray-400 hover:text-red-400 text-sm transition">Logout</button>
+            </form>
+        </div>
     </div>
 </nav>
 

@@ -11,6 +11,8 @@ import (
 
 	_ "modernc.org/sqlite"
 	"golang.org/x/crypto/bcrypt"
+
+	"nginx-proxy-manager/internal/auth"
 )
 
 type Store struct {
@@ -181,6 +183,50 @@ func (s *Store) ValidateSession(sessionID string) (int64, error) {
 func (s *Store) DeleteSession(sessionID string) error {
 	_, err := s.db.Exec("DELETE FROM sessions WHERE id = ?", sessionID)
 	return err
+}
+
+func (s *Store) CreateUser(username, password string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(
+		"INSERT INTO users (username, password_hash, password_change_required) VALUES (?, ?, 0)",
+		username, string(hash),
+	)
+	return err
+}
+
+func (s *Store) DeleteUser(userID int64) error {
+	res, err := s.db.Exec("DELETE FROM users WHERE id = ?", userID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
+}
+
+func (s *Store) ListUsers() ([]auth.User, error) {
+	rows, err := s.db.Query("SELECT id, username, created_at FROM users ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []auth.User
+	for rows.Next() {
+		var u auth.User
+		var createdAt sql.NullString
+		if err := rows.Scan(&u.ID, &u.Username, &createdAt); err != nil {
+			return nil, err
+		}
+		u.CreatedAt = createdAt.String
+		users = append(users, u)
+	}
+	return users, rows.Err()
 }
 
 func (s *Store) cleanupLoop() {
